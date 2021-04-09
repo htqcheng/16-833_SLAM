@@ -3,7 +3,7 @@
     Rewritten in Python by Wei Dong (weidong@andrew.cmu.edu), 2021
 '''
 
-from scipy.sparse import csc_matrix, eye
+from scipy.sparse import csr_matrix, csc_matrix, eye
 from scipy.sparse.linalg import inv, splu, spsolve, spsolve_triangular
 from sparseqr import rz, permutation_vector_to_matrix, solve as qrsolve
 import numpy as np
@@ -17,36 +17,37 @@ def solve_default(A, b):
 
 
 def solve_pinv(A, b):
-    # TODO: return x s.t. Ax = b using pseudo inverse.
+    # return x s.t. Ax = b using pseudo inverse.
     N = A.shape[1]
-    x = np.zeros((N, ))
+    x = inv(A.T @ A) @ A.T @ b
     return x, None
 
 
 def solve_lu(A, b):
-    # TODO: return x, U s.t. Ax = b, and A = LU with LU decomposition.
+    # return x, U s.t. Ax = b, and A = LU with LU decomposition.
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.splu.html
-    N = A.shape[1]
-    x = np.zeros((N, ))
-    U = eye(N)
+    lu = splu(A.T @ A, 'NATURAL')
+    x = lu.solve(A.T @ b)
+    U = lu.U
     return x, U
 
 
 def solve_lu_colamd(A, b):
-    # TODO: return x, U s.t. Ax = b, and Permutation_rows A Permutration_cols = LU with reordered LU decomposition.
+    # return x, U s.t. Ax = b, and Permutation_rows A Permutration_cols = LU with reordered LU decomposition.
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.splu.html
-    N = A.shape[1]
-    x = np.zeros((N, ))
-    U = eye(N)
+    lu = splu(A.T @ A, 'COLAMD')
+    x = lu.solve(A.T @ b)
+    U = lu.U
     return x, U
 
 
 def solve_qr(A, b):
     # TODO: return x, R s.t. Ax = b, and |Ax - b|^2 = |Rx - d|^2 + |e|^2
     # https://github.com/theNded/PySPQR
-    N = A.shape[1]
-    x = np.zeros((N, ))
-    R = eye(N)
+    z, R, E, rank = rz(A, b, permc_spec='NATURAL')
+    z = z.flatten()
+    
+    x = spsolve_triangular(csr_matrix(R), z, lower=False)
     return x, R
 
 
@@ -55,7 +56,11 @@ def solve_qr_colamd(A, b):
     # https://github.com/theNded/PySPQR
     N = A.shape[1]
     x = np.zeros((N, ))
-    R = eye(N)
+    z, R, E, rank = rz(A, b, permc_spec='COLAMD')
+    z = z.flatten()
+    
+    x_prime = spsolve_triangular(csr_matrix(R), z, lower=False)
+    x[E] = x_prime
     return x, R
 
 
