@@ -12,6 +12,7 @@ import argparse
 import transforms
 import o3d_utility
 
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import splu, spsolve
 
 
@@ -56,18 +57,17 @@ def find_projective_correspondence(source_points,
     mask = np.logical_and(mask, target_us < w)
     mask = np.logical_and(mask, target_vs >= 0)
     mask = np.logical_and(mask, target_vs < h)
-    mask = np.logical_and(mask, target_ds >= 0)
+    # mask = np.logical_and(mask, target_ds >= 0)
     # End of TODO
 
     source_indices = source_indices[mask]
     target_us = target_us[mask]
     target_vs = target_vs[mask]
-    target_ds = target_ds[mask]
     T_source_points = T_source_points[mask]
 
     # TODO: second filter: apply distance threshold
     qs = target_vertex_map[target_vs, target_us]
-    ps = source_points[source_indices]
+    ps = T_source_points
     mask = np.linalg.norm(qs-ps, axis=1) < dist_diff
     # End of TODO
 
@@ -94,15 +94,12 @@ def build_linear_system(source_points, target_points, target_normals, T):
 
     # TODO: build the linear system
     diff_vector = p_prime - q
-    for i in range(M):
-        b[i] = n_q[i] @ diff_vector[i].T
-        A_prime = np.array([[0, p_prime[i][2], -p_prime[i][1], 1, 0, 0],
-                            [-p_prime[i][2], 0, p_prime[i][0], 0, 1, 0],
-                            [p_prime[i][1], -p_prime[i][0], 0, 0, 0, 1]])
-        A[i] = n_q[i] @ A_prime
+    b = np.sum(n_q * diff_vector, axis=1)
+    A[:, 0:3] = np.cross(n_q, -p_prime)
+    A[:, 3:] = n_q
     # End of TODO
 
-    return A, b
+    return csr_matrix(A), b
 
 
 def pose2transformation(delta):
@@ -215,7 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--target_idx',
                         type=int,
                         help='index to the source depth/normal maps',
-                        default=50)
+                        default=100)
     args = parser.parse_args()
 
     intrinsic_struct = o3d.io.read_pinhole_camera_intrinsic('intrinsics.json')

@@ -35,7 +35,15 @@ class Map:
         \param t translation from camera (input) to world (map), (3, )
         \return None, update map properties IN PLACE
         '''
-        pass
+        q_global = (R @ points.T).T + t.flatten()     # (N, 3)
+        self.points[indices] = (self.weights[indices] * self.points[indices] + q_global) / (self.weights[indices] + 1)
+        self.normals[indices] = (self.weights[indices] * self.normals[indices] + (R @ normals.T).T) / (self.weights[indices] + 1)
+        # norms = np.linalg.norm(self.normals[indices], axis=1)
+        self.normals[indices] /= np.linalg.norm(self.normals[indices], axis=1)[:, None]
+
+        self.colors[indices] = (self.weights[indices] * self.colors[indices] + colors) / (self.weights[indices] + 1)
+
+        self.weights[indices] += 1
 
     def add(self, points, normals, colors, R, t):
         '''
@@ -45,10 +53,18 @@ class Map:
         \param normals Input associated normals, (N, 3)
         \param colors Input associated colors, (N, 3)
         \param R rotation from camera (input) to world (map), (3, 3)
-        \param t translation from camera (input) to world (map), (3, )
+        \param t translation from camera (input) to world (map), (3, 1)
         \return None, update map properties by concatenation
         '''
-        pass
+        N, _ = points.shape
+        q_global = (R @ points.T).T + t.flatten()
+        normal_global = (R @ normals.T).T
+        weights = np.ones((N, 1))
+
+        self.points = np.vstack((self.points, q_global))
+        self.normals = np.vstack((self.normals, normal_global))
+        self.colors = np.vstack((self.colors, colors))
+        self.weights = np.vstack((self.weights, weights))
 
     def filter_pass1(self, us, vs, ds, h, w):
         '''
@@ -61,7 +77,12 @@ class Map:
         \param w Width of the image projected to
         \return mask (N, 1) in bool indicating the valid coordinates
         '''
-        return np.zeros_like(us)
+        mask = us>=0
+        mask = np.logical_and(mask, us < w)
+        mask = np.logical_and(mask, vs >= 0)
+        mask = np.logical_and(mask, vs < h)
+        mask = np.logical_and(mask, ds >= 0)
+        return mask
 
     def filter_pass2(self, points, normals, input_points, input_normals,
                      dist_diff, angle_diff):
@@ -76,7 +97,11 @@ class Map:
         \param angle_diff Angle difference threshold to filter correspondences by normals
         \return mask (N, 1) in bool indicating the valid correspondences
         '''
-        return np.zeros((len(points)))
+        mask = np.linalg.norm(points - input_points, axis=1) < dist_diff
+        dot_products = np.sum(normals * input_normals, axis=1)
+        angle_mask = np.arccos(dot_products) < angle_diff
+        mask = np.logical_and(mask, angle_mask)
+        return mask
 
     def fuse(self,
              vertex_map,
